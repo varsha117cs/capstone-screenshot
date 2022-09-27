@@ -1,0 +1,461 @@
+create one vm -workstation
+=================================================
+sudo apt update
+
+sudo apt install wget unzip -y
+
+sudo apt-get install unzip
+
+wget https://releases.hashicorp.com/terraform/1.0.0/terraform_1.0.0_linux_amd64.zip
+
+unzip terraform_1.0.0_linux_amd64.zip
+
+ls
+
+sudo mv terraform /usr/local/bin
+
+ls
+
+terraform -v
+
+####################################################
+
+file1.tf
+================================
+
+resource "google_compute_firewall" "rules-new" {
+  name        = "my-firewall-rule-new"
+  network     = "default"
+  description = "Creates firewall rule targeting tagged instances"
+
+
+
+ allow {
+    protocol  = "tcp"
+    ports     = ["80", "22"]
+  }
+
+
+
+ source_tags = ["w1", "w2"]
+  target_tags = ["bastion"]
+}
+
+
+##############################3
+resource.tf
+===========================
+resource "google_compute_firewall" "rules" {
+  name        = "my-firewall-rule"
+  network     = "default"
+  description = "Creates firewall rule targeting tagged instances"
+
+
+
+ allow {
+    protocol  = "tcp"
+    ports     = ["80", "22"]
+  }
+
+
+
+ source_tags = ["w1", "w2"]
+  target_tags = ["bastion"]
+}
+resource "google_compute_instance" "master" {
+  name         = "controlp"
+  machine_type = var.m_type
+  metadata_startup_script = file("./ansible.sh")
+  tags         = ["bastion"]
+  boot_disk {
+    initialize_params {
+      image = var.image[var.zone]
+    }
+  }
+# user_data = file("./userdata.tpl")
+  network_interface {
+    network = "default"
+    access_config {
+    }
+  }
+}
+
+
+
+resource "google_compute_instance" "master1" {
+  name         = "controlpanel"
+  machine_type = var.m_type
+  metadata_startup_script = file("./ansible.sh")
+  tags         = ["bastion"]
+  boot_disk {
+    initialize_params {
+      image = var.image[var.zone]
+    }
+  }
+# user_data = file("./userdata.tpl")
+  network_interface {
+    network = "default"
+    access_config {
+    }
+  }
+}
+
+
+
+resource "google_compute_instance" "worker-instances" {
+  name         = "${var.project_name}-workernode-${count.index + 1}"
+  machine_type = var.m_type
+  count        = var.instancecheck == true ? 2 : 0
+  tags         = ["w${count.index + 1}"]
+  boot_disk {
+    initialize_params {
+      image = var.image[var.zone]
+    }
+  }
+  network_interface {
+    network = "default"
+        access_config {
+    }
+  }
+}
+
+##########################33
+
+vars.tf
+===============================
+
+variable "instancecheck" {
+  default = true
+}
+variable "project_name" {
+  default = "ms-pp"
+}
+variable "vpc_name" {
+  default = "terraform--lab-vpc-network"
+}
+variable "firewall_name" {
+  default = "fwapp1"
+}
+variable "m_type" {
+  default = "e2-medium"
+}
+variable "zone" {
+  default = "us-south1-a"
+}
+variable "project_id" {
+  default = "capstone-363208"
+}
+variable "path" {
+}
+variable "image" {
+  type = map(string)
+  default = {
+    "us-south1-a" = "ubuntu-os-cloud/ubuntu-2004-lts"
+  }
+}
+
+#########################
+
+provider.tf
+====================================
+
+provider "google" {
+  credentials = file(var.path)
+  project     = var.project_id
+  zone        = var.zone
+}
+
+#########################
+
+ansible.sh
+=========================
+metadata_startup_script
+sudo apt-get update
+sudo apt-get install -y ansible
+
+#####################
+
+terraform.tfvars
+============================
+
+path       = "key.json"
+project_id = "capstone-363208"
+
+
+
+terraform init
+terraform fmt
+terraform validate
+terraform plan
+terraform apply --auto-approve
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+now we have 4 vm
+1- workstation --> sudo su -
+                   useradd ubuntu
+				   passwd  ubutntu1 (in all vm)
+2- masternode
+3- workernode1
+4- workernode1
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+after that login workstation --> login as a ubuntu and do ssh
+
+ssh-keygen
+copy public key and keep this key inside all vm ubuntu user in authorized_key
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+after that in workstation --> do exit in root user 
+
+vi /etc/ssh/sshd_config
+PubkeyAuthentication yes
+PasswordAuthentication yes
+
+systemctl restart sshd
+
+
+after that do ssh to ping another server
+
+ssh ip of another server
+
+###################################
+create kubedependencies.yml=========
+=============================================
+
+- hosts: all
+  become: yes
+  tasks:
+   - name: Docker Installation
+     apt:
+       name: docker.io
+       state: present
+       update_cache: true
+
+
+
+   - name: install APT Transport HTTPS
+     apt:
+       name: apt-transport-https
+       state: present
+
+
+
+   - name: add Kubernetes apt-key for APT repository
+     apt_key:
+       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+       state: present
+
+
+
+   - name: add Kubernetes APT repository
+     apt_repository:
+      repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+      filename: 'kubernetes'
+
+
+
+   - name: install kubelet
+     apt:
+       name: kubelet
+       state: present
+       update_cache: true
+
+
+
+   - name: install kubeadm
+     apt:
+       name: kubeadm
+       state: present
+
+
+
+- hosts: control
+  become: yes
+  tasks:
+   - name: install kubectl
+     apt:
+       name: kubectl
+       state: present
+       force: yes
+
+
+####################################################
+ubuntu@workstation:~$ cat hosts
+
+[control]
+34.174.60.110
+[worker]
+34.174.222.116
+34.174.53.2
+
+
+######################################################
+ubuntu@workstation:~$ cat jenkins.yml
+
+---
+- hosts: target
+  become: yes
+  remote_user: ubuntu
+  become_user: root
+  tasks:
+  - name: Download Long Term Jenkins release
+    apt_key: url=https://pkg.jenkins.io/debian-stable/jenkins.io.key state=present
+ 
+  - name: ensure the repository is configured
+    apt_repository: repo='deb https://pkg.jenkins.io/debian-stable binary/' state=present
+ 
+  - name: Install Java
+    apt: name="openjdk-11-jdk" state=present
+ 
+  - name: ensure jenkins is installed
+    apt: name=jenkins update_cache=yes
+ 
+  - name: ensure jenkins is running
+    service: name=jenkins state=started
+ 
+  - name: Add the user jenkins
+    shell: useradd jenkins
+	
+	################3333
+---	
+- hosts: all
+  become: yes
+  tasks:
+   - name: Docker Installation
+     apt:
+       name: docker.io
+       state: present
+       update_cache: true
+
+
+
+  - name: install APT Transport HTTPS
+     apt:
+       name: apt-transport-https
+       state: present
+
+
+
+  - name: add Kubernetes apt-key for APT repository
+     apt_key:
+       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+       state: present
+
+
+
+  - name: add Kubernetes APT repository
+     apt_repository:
+      repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+      filename: 'kubernetes'
+
+
+
+  - name: install kubelet
+     apt:
+       name: kubelet
+       state: present
+       update_cache: true
+
+
+
+  - name: install kubeadm
+     apt:
+       name: kubeadm
+       state: present
+
+
+###################################################
+kubedependencies.yml
+
+---
+- hosts: masters
+  become: yes
+  tasks:
+   - name: install kubectl
+     apt:
+       name: kubectl
+       state: present
+       force: yes
+
+###########################
+
+ubuntu@workstation:~$ cat clustersetup.yml
+- hosts: control
+  become: yes
+  tasks:
+    - name: Start the cluster
+      shell: kubeadm init --pod-network-cidr=10.244.0.0/16 >> cluster.txt
+      args:
+        chdir: $HOME
+        creates: cluster.txt
+
+
+
+   - name: create .kube directory
+      become: yes
+      file:
+        path: $HOME/.kube
+        state: directory
+        mode: 0755
+
+
+
+   - name: copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /var/lib/jenkins/.kube/config
+        remote_src: yes
+
+
+
+   - name: install Pod network
+      become: yes
+      shell: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml >> pod_setup.txt
+      args:
+        chdir: $HOME
+        creates: pod_setup.txt
+ubuntu@workstation:~$
+
+#######################
+
+ubuntu@workstation:~$ cat workersetup.yml
+- hosts: control
+  become: yes
+  gather_facts: false
+  tasks:
+    - name: get join command
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+
+
+
+
+
+  - name: set join command
+      set_fact:
+        join_command: "{{ join_command_raw.stdout_lines[0] }}"
+
+
+
+
+
+- hosts: worker
+  become: yes
+  tasks:
+    - name: join cluster
+      shell: "10.206.0.11.join_command >> node_joined.txt"
+      args:
+        chdir: $HOME
+        creates: node_joined.txt
+ubuntu@workstation:~$
+########################33
+kubeadm token create --print-join-command
+
+generate token-->>
+
+kubeadm join 10.206.0.2:6443 --token gj0pii.7p0srs3hremiyf9b --discovery-token-ca-cert-hash sha256:7c3d3e3a45893ea3df2f58f7ca5389a7cc9baab0bcd23685ed1f6111c0019ad1
